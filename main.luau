@@ -1,12 +1,37 @@
+--// Jujutsu Shenanigans
+--// Main.luau
+--// Player ESP only
+
+local BaseUrl = "https://raw.githubusercontent.com/D4rkRoblox/Jujutsu-Shenanigans-Script/main/"
+
+local function LoadComponent(Path)
+    local Source = game:HttpGet(BaseUrl .. Path)
+    local Chunk, Error = loadstring(Source)
+
+    if not Chunk then
+        error(("Failed to compile %s: %s"):format(Path, tostring(Error)))
+    end
+
+    local Success, Result = pcall(Chunk)
+
+    if not Success then
+        error(("Failed to load %s: %s"):format(Path, tostring(Result)))
+    end
+
+    return Result
+end
+
+--// Components
+local Interface = LoadComponent("Components/Interface.luau")
+local ESP = LoadComponent("Components/ESP.luau")
+
 local Players = game:GetService("Players")
-
-local Interface = require(script.Parent.Components.Interface)
-local ESP = require(script.Parent.Components.ESP)
-
 local LocalPlayer = Players.LocalPlayer
 
---// Window
-local Window = Interface:CreateWindow({
+--// Obsidian
+local Library = Interface
+
+local Window = Library:CreateWindow({
     Title = "Jujutsu Shenanigans",
     Footer = "Player ESP",
     Center = true,
@@ -14,175 +39,242 @@ local Window = Interface:CreateWindow({
     Resizable = true,
     ShowCustomCursor = true,
     NotifySide = "Right",
-    TabPadding = 8,
-    MenuFadeTime = 0.2,
 })
 
---// Player ESP Tab
-local ESPTab = Window:AddTab("Player ESP", "eye")
+local Tabs = {
+    Main = Window:AddTab("Main", "user"),
+    ESP = Window:AddTab("ESP", "eye"),
+}
 
+--// ESP state
 local PlayerESPEnabled = false
 local PlayerESPObjects = {}
 
-local function getCharacterRoot(character)
-    if not character then
-        return nil
+local ESPColor = Color3.fromRGB(255, 255, 255)
+
+local function GetCharacter(Player)
+    local Character = Player.Character
+
+    if Character and Character.Parent then
+        return Character
     end
 
-    return character:FindFirstChild("HumanoidRootPart")
-        or character:FindFirstChild("UpperTorso")
-        or character:FindFirstChild("Torso")
+    return nil
 end
 
-local function addPlayerESP(player)
-    if player == LocalPlayer or PlayerESPObjects[player] then
+local function AddPlayerESP(Player)
+    if Player == LocalPlayer then
         return
     end
 
-    local character = player.Character
-    local root = getCharacterRoot(character)
+    local Character = GetCharacter(Player)
 
-    if not character or not root then
+    if not Character then
         return
     end
 
-    local success = pcall(function()
-        ESP:AddESP({
-            Object = character,
-            Text = player.DisplayName,
-            Color = Color3.fromRGB(255, 255, 255),
-        })
-    end)
-
-    if success then
-        PlayerESPObjects[player] = character
+    if PlayerESPObjects[Player] == Character then
+        return
     end
-end
 
-local function removePlayerESP(player)
-    local character = PlayerESPObjects[player]
-
-    if character then
+    if PlayerESPObjects[Player] then
         pcall(function()
-            ESP:RemoveESP(character)
+            ESP:RemoveESP(PlayerESPObjects[Player])
         end)
 
-        PlayerESPObjects[player] = nil
+        PlayerESPObjects[Player] = nil
     end
+
+    ESP:AddESP({
+        Object = Character,
+        Text = Player.DisplayName,
+        Color = ESPColor,
+    })
+
+    PlayerESPObjects[Player] = Character
 end
 
-local function refreshPlayerESP()
-    for _, player in ipairs(Players:GetPlayers()) do
-        if player ~= LocalPlayer then
+local function RemovePlayerESP(Player)
+    local Character = PlayerESPObjects[Player]
+
+    if not Character then
+        return
+    end
+
+    pcall(function()
+        ESP:RemoveESP(Character)
+    end)
+
+    PlayerESPObjects[Player] = nil
+end
+
+local function RefreshPlayerESP()
+    for _, Player in ipairs(Players:GetPlayers()) do
+        if Player ~= LocalPlayer then
             if PlayerESPEnabled then
-                addPlayerESP(player)
+                AddPlayerESP(Player)
             else
-                removePlayerESP(player)
+                RemovePlayerESP(Player)
             end
         end
     end
 end
 
-local function enablePlayerESP()
-    PlayerESPEnabled = true
+local function SetPlayerESP(Value)
+    PlayerESPEnabled = Value
 
-    ESP:SetShowDistance(true)
-    ESP:SetTracers(false)
-    ESP:SetArrows(false)
-    ESP:SetMatchColors(true)
-    ESP:SetFillTransparency(0.75)
-    ESP:SetOutlineTransparency(0)
-    ESP:SetTextTransparency(0)
-    ESP:SetTextOutlineTransparency(0)
-    ESP:SetTextSize(20)
-
-    refreshPlayerESP()
-end
-
-local function disablePlayerESP()
-    PlayerESPEnabled = false
-
-    for player in pairs(PlayerESPObjects) do
-        removePlayerESP(player)
+    if Value then
+        RefreshPlayerESP()
+    else
+        for Player in pairs(PlayerESPObjects) do
+            RemovePlayerESP(Player)
+        end
     end
 end
 
---// Toggle
-ESPTab:AddToggle("PlayerESP", {
+--// Main tab
+local MainBox = Tabs.Main:AddLeftGroupbox({
+    Name = "Jujutsu Shenanigans",
+    IconName = "gamepad-2",
+})
+
+MainBox:AddLabel("Jujutsu Shenanigans Script")
+MainBox:AddLabel("Player ESP is available in the ESP tab.", true)
+
+--// ESP tab
+local PlayerBox = Tabs.ESP:AddLeftGroupbox({
+    Name = "Player ESP",
+    IconName = "users",
+})
+
+PlayerBox:AddToggle("PlayerESP", {
     Text = "Player ESP",
     Default = false,
-    Tooltip = "Shows ESP on other players",
-}):OnChanged(function(value)
-    if value then
-        enablePlayerESP()
-    else
-        disablePlayerESP()
+    Tooltip = "Highlights other players.",
+})
+
+PlayerBox:AddLabel("ESP Color"):AddColorPicker("ESPColor", {
+    Default = ESPColor,
+    Title = "Player ESP Color",
+})
+
+local SettingsBox = Tabs.ESP:AddRightGroupbox({
+    Name = "ESP Settings",
+    IconName = "settings",
+})
+
+SettingsBox:AddToggle("ShowDistance", {
+    Text = "Distance",
+    Default = false,
+    Tooltip = "Shows the distance to each player.",
+})
+
+SettingsBox:AddToggle("ShowTracers", {
+    Text = "Tracers",
+    Default = false,
+    Tooltip = "Draws a line from the bottom of the screen to players.",
+})
+
+SettingsBox:AddToggle("ShowArrows", {
+    Text = "Offscreen Arrows",
+    Default = false,
+    Tooltip = "Shows an arrow when a player is outside the screen.",
+})
+
+SettingsBox:AddToggle("RainbowESP", {
+    Text = "Rainbow",
+    Default = false,
+    Tooltip = "Cycles the ESP color.",
+})
+
+--// UI callbacks
+Library.Toggles.PlayerESP:OnChanged(function()
+    SetPlayerESP(Library.Toggles.PlayerESP.Value)
+end)
+
+Library.Options.ESPColor:OnChanged(function()
+    ESPColor = Library.Options.ESPColor.Value
+
+    for _, Character in pairs(PlayerESPObjects) do
+        ESP:UpdateObjectColor(Character, ESPColor)
     end
 end)
 
---// Settings
-local SettingsBox = ESPTab:AddLeftGroupbox("ESP Settings")
-
-SettingsBox:AddToggle("ESPDistance", {
-    Text = "Distance",
-    Default = true,
-    Tooltip = "Shows the distance to players",
-}):OnChanged(function(value)
-    ESP:SetShowDistance(value)
+Library.Toggles.ShowDistance:OnChanged(function()
+    ESP:SetShowDistance(Library.Toggles.ShowDistance.Value)
 end)
 
-SettingsBox:AddToggle("ESPTracers", {
-    Text = "Tracers",
-    Default = false,
-    Tooltip = "Draws lines from the bottom of the screen to players",
-}):OnChanged(function(value)
-    ESP:SetTracers(value)
+Library.Toggles.ShowTracers:OnChanged(function()
+    ESP:SetTracers(Library.Toggles.ShowTracers.Value)
 end)
 
-SettingsBox:AddToggle("ESPArrows", {
-    Text = "Offscreen Arrows",
-    Default = false,
-    Tooltip = "Shows arrows for players outside the screen",
-}):OnChanged(function(value)
-    ESP:SetArrows(value)
+Library.Toggles.ShowArrows:OnChanged(function()
+    ESP:SetArrows(Library.Toggles.ShowArrows.Value)
 end)
 
---// Player handling
-Players.PlayerAdded:Connect(function(player)
-    player.CharacterAdded:Connect(function()
+Library.Toggles.RainbowESP:OnChanged(function()
+    ESP:SetRainbow(Library.Toggles.RainbowESP.Value)
+end)
+
+--// Player connections
+local CharacterConnections = {}
+
+local function WatchPlayer(Player)
+    if Player == LocalPlayer then
+        return
+    end
+
+    if CharacterConnections[Player] then
+        CharacterConnections[Player]:Disconnect()
+    end
+
+    CharacterConnections[Player] = Player.CharacterAdded:Connect(function()
         task.wait(0.5)
 
         if PlayerESPEnabled then
-            addPlayerESP(player)
+            RemovePlayerESP(Player)
+            AddPlayerESP(Player)
         end
     end)
 
-    if player.Character and PlayerESPEnabled then
-        task.defer(addPlayerESP, player)
-    end
-end)
-
-Players.PlayerRemoving:Connect(function(player)
-    removePlayerESP(player)
-end)
-
-for _, player in ipairs(Players:GetPlayers()) do
-    if player ~= LocalPlayer then
-        player.CharacterAdded:Connect(function()
-            task.wait(0.5)
-
-            if PlayerESPEnabled then
-                removePlayerESP(player)
-                addPlayerESP(player)
-            end
-        end)
+    if PlayerESPEnabled and Player.Character then
+        task.defer(AddPlayerESP, Player)
     end
 end
 
---// Initial setup
-ESP:SetShowDistance(true)
-ESP:SetTracers(false)
-ESP:SetArrows(false)
-ESP:SetRenderLimit(240)
+for _, Player in ipairs(Players:GetPlayers()) do
+    WatchPlayer(Player)
+end
+
+Players.PlayerAdded:Connect(function(Player)
+    WatchPlayer(Player)
+end)
+
+Players.PlayerRemoving:Connect(function(Player)
+    RemovePlayerESP(Player)
+
+    if CharacterConnections[Player] then
+        CharacterConnections[Player]:Disconnect()
+        CharacterConnections[Player] = nil
+    end
+end)
+
+--// Cleanup when Obsidian unloads
+Library:OnUnload(function()
+    PlayerESPEnabled = false
+
+    for Player in pairs(PlayerESPObjects) do
+        RemovePlayerESP(Player)
+    end
+
+    for Player, Connection in pairs(CharacterConnections) do
+        Connection:Disconnect()
+        CharacterConnections[Player] = nil
+    end
+
+    pcall(function()
+        ESP:Unload()
+    end)
+end)
 
 return Window
